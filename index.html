@@ -1,0 +1,2064 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="사진을 참고해 재구성한 3D 드론 자동 비행 시뮬레이터" />
+  <title>3D 드론 환경 비행 시뮬레이터</title>
+
+  <style>
+    :root {
+      --safe: #22c55e;
+      --safe-dark: #15803d;
+      --danger: #ef4444;
+      --danger-dark: #b91c1c;
+      --blue: #2563eb;
+      --amber: #f59e0b;
+      --panel: rgba(8, 15, 30, 0.9);
+      --panel-soft: rgba(15, 23, 42, 0.72);
+      --line: rgba(255, 255, 255, 0.15);
+      --text: #f8fafc;
+      --muted: #cbd5e1;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, "Noto Sans KR", sans-serif;
+      color: var(--text);
+      background: #0b1220;
+    }
+
+    button, input, select { font: inherit; }
+
+    #app {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    #threeCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      outline: none;
+    }
+
+    .glass {
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      box-shadow: 0 18px 55px rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(13px);
+      -webkit-backdrop-filter: blur(13px);
+    }
+
+    #topHud {
+      position: absolute;
+      z-index: 20;
+      top: 18px;
+      left: 18px;
+      max-width: min(580px, calc(100vw - 96px));
+      padding: 13px 16px;
+      border-radius: 16px;
+      pointer-events: none;
+    }
+
+    #topHud .eyebrow {
+      margin-bottom: 4px;
+      color: #93c5fd;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+    }
+
+    #missionTitle {
+      margin: 0;
+      font-size: clamp(17px, 2.4vw, 26px);
+      line-height: 1.2;
+    }
+
+    #missionMessage {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    #menuButton {
+      position: absolute;
+      z-index: 50;
+      top: 18px;
+      right: 18px;
+      width: 52px;
+      height: 52px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      color: white;
+      background: rgba(8, 15, 30, 0.82);
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.24);
+      backdrop-filter: blur(12px);
+      cursor: pointer;
+    }
+
+    #menuButton span,
+    #menuButton::before,
+    #menuButton::after {
+      content: "";
+      position: absolute;
+      left: 14px;
+      width: 22px;
+      height: 2px;
+      border-radius: 99px;
+      background: white;
+      transition: transform 0.25s ease, opacity 0.25s ease, top 0.25s ease;
+    }
+
+    #menuButton::before { top: 17px; }
+    #menuButton span { top: 24px; }
+    #menuButton::after { top: 31px; }
+
+    #menuButton.open::before { top: 24px; transform: rotate(45deg); }
+    #menuButton.open span { opacity: 0; }
+    #menuButton.open::after { top: 24px; transform: rotate(-45deg); }
+
+    #sidebarBackdrop {
+      position: absolute;
+      z-index: 38;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.46);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.28s ease;
+    }
+
+    #sidebarBackdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    #sidebar {
+      position: absolute;
+      z-index: 40;
+      top: 0;
+      right: 0;
+      width: min(420px, 94vw);
+      height: 100%;
+      padding: 86px 18px 24px;
+      overflow-y: auto;
+      background: var(--panel);
+      border-left: 1px solid var(--line);
+      box-shadow: -22px 0 70px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(18px);
+      transform: translateX(105%);
+      transition: transform 0.3s ease;
+    }
+
+    #sidebar.open { transform: translateX(0); }
+
+    .sideSection {
+      margin-bottom: 16px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: rgba(255, 255, 255, 0.045);
+    }
+
+    .sideSection h2 {
+      margin: 0 0 5px;
+      font-size: 17px;
+    }
+
+    .sideSection p {
+      margin: 0 0 13px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .formGrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 11px;
+    }
+
+    .field.full { grid-column: 1 / -1; }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      color: #e2e8f0;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    input, select {
+      width: 100%;
+      min-height: 42px;
+      padding: 9px 10px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 11px;
+      outline: none;
+      color: white;
+      background: rgba(2, 6, 23, 0.62);
+    }
+
+    input:focus, select:focus {
+      border-color: #60a5fa;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+
+    option { color: #111827; }
+
+    .scenarioGrid {
+      display: grid;
+      gap: 9px;
+    }
+
+    .scenarioButton,
+    .actionButton {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 0;
+      border-radius: 12px;
+      color: white;
+      font-weight: 900;
+      cursor: pointer;
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+
+    .scenarioButton:hover,
+    .actionButton:hover { filter: brightness(1.06); }
+    .scenarioButton:active,
+    .actionButton:active { transform: translateY(1px); }
+
+    .scenarioButton.safe {
+      background: linear-gradient(135deg, var(--safe-dark), var(--safe));
+    }
+
+    .scenarioButton.danger {
+      background: linear-gradient(135deg, var(--danger-dark), var(--danger));
+    }
+
+    .actionGrid {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .actionButton.start { background: linear-gradient(135deg, #1d4ed8, #3b82f6); }
+    .actionButton.pause { color: #422006; background: #fbbf24; }
+    .actionButton.reset { color: #0f172a; background: #e2e8f0; }
+
+    .actionButton:disabled {
+      opacity: 0.52;
+      cursor: not-allowed;
+    }
+
+    #telemetry {
+      position: absolute;
+      z-index: 19;
+      left: 18px;
+      bottom: 18px;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(92px, 1fr));
+      gap: 8px;
+      width: min(720px, calc(100vw - 36px));
+      pointer-events: none;
+    }
+
+    .telemetryCard {
+      min-width: 0;
+      padding: 10px 12px;
+      border-radius: 14px;
+    }
+
+    .telemetryCard span {
+      display: block;
+      overflow: hidden;
+      color: #cbd5e1;
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .telemetryCard b {
+      display: block;
+      margin-top: 4px;
+      overflow: hidden;
+      font-size: 16px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #weatherBadge {
+      position: absolute;
+      z-index: 18;
+      right: 18px;
+      bottom: 18px;
+      padding: 10px 13px;
+      border-radius: 14px;
+      color: #e2e8f0;
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    #toast {
+      position: absolute;
+      z-index: 60;
+      left: 50%;
+      top: 78px;
+      max-width: min(560px, calc(100vw - 38px));
+      padding: 12px 17px;
+      border-radius: 14px;
+      color: white;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid var(--line);
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+      opacity: 0;
+      transform: translate(-50%, -12px);
+      pointer-events: none;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    #loadingOverlay {
+      position: absolute;
+      z-index: 100;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      text-align: center;
+      background: radial-gradient(circle, #172554, #020617 72%);
+      transition: opacity 0.5s ease;
+    }
+
+    #loadingOverlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .loaderRing {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 15px;
+      border: 4px solid rgba(255, 255, 255, 0.18);
+      border-top-color: #60a5fa;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .smallNote {
+      margin-top: 10px;
+      color: #94a3b8;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 760px) {
+      #topHud { top: 12px; left: 12px; }
+      #menuButton { top: 12px; right: 12px; }
+      #telemetry {
+        left: 10px;
+        bottom: 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: min(370px, calc(100vw - 20px));
+      }
+      .telemetryCard:nth-child(5) { display: none; }
+      #weatherBadge { display: none; }
+      .formGrid { grid-template-columns: 1fr; }
+      .field.full { grid-column: auto; }
+      .actionGrid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+<div id="app">
+  <canvas id="threeCanvas" aria-label="3D 드론 자동 비행 시뮬레이션 화면"></canvas>
+
+  <div id="loadingOverlay">
+    <div>
+      <div class="loaderRing"></div>
+      <b>3D 환경을 준비하고 있습니다.</b>
+      <div class="smallNote">인터넷 연결이 있어야 Three.js 모듈을 불러올 수 있습니다.</div>
+    </div>
+  </div>
+
+  <div id="topHud" class="glass">
+    <div class="eyebrow">AUTONOMOUS DRONE SIMULATOR</div>
+    <h1 id="missionTitle">3D 드론 환경 비행 시뮬레이터</h1>
+    <div id="missionMessage">대기 중 · 우측 상단 메뉴에서 지형과 기상 조건을 설정하세요.</div>
+  </div>
+
+  <button id="menuButton" type="button" aria-label="설정 사이드바 열기"><span></span></button>
+  <div id="sidebarBackdrop"></div>
+
+  <aside id="sidebar" aria-label="드론 시뮬레이션 설정">
+    <section class="sideSection">
+      <h2>빠른 조건 설정</h2>
+      <p>버튼을 누르면 대표적인 실험 조건이 자동으로 입력됩니다.</p>
+      <div class="scenarioGrid">
+        <button class="scenarioButton safe" data-scenario="safe">안전 조건 적용</button>
+        <button class="scenarioButton danger" data-scenario="battery">배터리 부족 조건 적용</button>
+        <button class="scenarioButton danger" data-scenario="flip">드론 뒤집힘 조건 적용</button>
+      </div>
+    </section>
+
+    <section class="sideSection">
+      <h2>환경 설정</h2>
+      <p>지형을 바꾸면 3D 환경 전체가 즉시 다시 생성됩니다.</p>
+      <div class="formGrid">
+        <div class="field">
+          <label for="terrainSelect">지형</label>
+          <select id="terrainSelect">
+            <option value="plain" selected>평지 지형</option>
+            <option value="mountain">산지 지형</option>
+            <option value="ocean">해양 지형</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="weatherSelect">날씨</label>
+          <select id="weatherSelect">
+            <option value="clear" selected>맑음</option>
+            <option value="rain">비</option>
+            <option value="snow">눈</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="windSpeed">평균 풍속 (m/s)</label>
+          <input id="windSpeed" type="number" min="0" max="20" step="0.5" value="3" />
+        </div>
+        <div class="field">
+          <label for="gustSpeed">순간 돌풍 (m/s)</label>
+          <input id="gustSpeed" type="number" min="0" max="25" step="0.5" value="5" />
+        </div>
+        <div class="field full">
+          <label for="windDirection">풍향 (0° 북쪽 · 90° 동쪽)</label>
+          <input id="windDirection" type="range" min="0" max="359" step="1" value="90" />
+        </div>
+        <div class="field">
+          <label for="temperature">기온 (℃)</label>
+          <input id="temperature" type="number" min="-15" max="45" step="1" value="24" />
+        </div>
+        <div class="field">
+          <label for="visibility">가시거리</label>
+          <select id="visibility">
+            <option value="1" selected>좋음</option>
+            <option value="0.72">보통</option>
+            <option value="0.48">나쁨</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="sideSection">
+      <h2>비행 설정</h2>
+      <p>자동 이륙 후 정사각형 경로를 따라 비행하고 출발점으로 복귀합니다.</p>
+      <div class="formGrid">
+        <div class="field">
+          <label for="targetAltitude">목표 고도 (m)</label>
+          <input id="targetAltitude" type="number" min="4" max="30" step="1" value="12" />
+        </div>
+        <div class="field">
+          <label for="flightSpeed">비행 속도</label>
+          <select id="flightSpeed">
+            <option value="0.82">빠르게</option>
+            <option value="1" selected>보통</option>
+            <option value="1.25">천천히</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="batteryStart">시작 배터리 (%)</label>
+          <input id="batteryStart" type="number" min="8" max="100" step="1" value="88" />
+        </div>
+        <div class="field">
+          <label for="payload">추가 적재 무게 (g)</label>
+          <input id="payload" type="number" min="0" max="1000" step="10" value="100" />
+        </div>
+        <div class="field full">
+          <label for="autopilot">자동 자세 보정</label>
+          <select id="autopilot">
+            <option value="1.18">강함</option>
+            <option value="1" selected>보통</option>
+            <option value="0.72">약함</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="sideSection">
+      <h2>비행 제어</h2>
+      <div class="actionGrid">
+        <button id="startButton" class="actionButton start">자동 비행 시작</button>
+        <button id="pauseButton" class="actionButton pause" disabled>일시정지</button>
+        <button id="resetButton" class="actionButton reset">초기화</button>
+      </div>
+      <div class="smallNote">
+        이 시뮬레이션은 학교 탐구용 단순화 모델이며 실제 기체의 비행 허가나 안전을 판정하지 않습니다.
+      </div>
+    </section>
+  </aside>
+
+  <div id="telemetry">
+    <div class="telemetryCard glass"><span>비행 단계</span><b id="stageValue">대기</b></div>
+    <div class="telemetryCard glass"><span>현재 고도</span><b id="altitudeValue">0.0 m</b></div>
+    <div class="telemetryCard glass"><span>수평 속도</span><b id="speedValue">0.0 m/s</b></div>
+    <div class="telemetryCard glass"><span>배터리</span><b id="batteryValue">88%</b></div>
+    <div class="telemetryCard glass"><span>안전 지수</span><b id="safetyValue">100점</b></div>
+  </div>
+
+  <div id="weatherBadge" class="glass">평지 · 맑음 · 바람 3m/s</div>
+  <div id="toast"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+  import * as THREE from "three";
+  import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+  const $ = id => document.getElementById(id);
+  const canvas = $("threeCanvas");
+  const app = $("app");
+
+  // ---------- 기본 Three.js 장면 ----------
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x9fd7f5);
+  scene.fog = new THREE.FogExp2(0xa9d8ed, 0.006);
+
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 500);
+  camera.position.set(31, 21, 31);
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.target.set(0, 5, 0);
+  controls.minDistance = 10;
+  controls.maxDistance = 90;
+  controls.maxPolarAngle = Math.PI * 0.49;
+
+  const hemisphere = new THREE.HemisphereLight(0xe8f7ff, 0x465239, 2.25);
+  scene.add(hemisphere);
+
+  const sun = new THREE.DirectionalLight(0xffffff, 2.7);
+  sun.position.set(30, 45, 24);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.left = -65;
+  sun.shadow.camera.right = 65;
+  sun.shadow.camera.top = 65;
+  sun.shadow.camera.bottom = -65;
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 150;
+  scene.add(sun);
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.25);
+  scene.add(ambient);
+
+  const environmentGroup = new THREE.Group();
+  const cloudGroup = new THREE.Group();
+  const weatherGroup = new THREE.Group();
+  const routeGroup = new THREE.Group();
+  scene.add(environmentGroup, cloudGroup, weatherGroup, routeGroup);
+
+  // ---------- 절차적 재질과 공통 도우미 ----------
+  function seededRandom(seed) {
+    let value = seed % 2147483647;
+    if (value <= 0) value += 2147483646;
+    return () => (value = value * 16807 % 2147483647) / 2147483647;
+  }
+
+  function disposeGroup(group) {
+    while (group.children.length) {
+      const child = group.children.pop();
+      child.traverse(object => {
+        if (object.geometry) object.geometry.dispose();
+        if (object.material) {
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach(material => {
+            // 공용 절차적 텍스처는 지형을 다시 선택할 때 재사용하므로 여기서 폐기하지 않습니다.
+            material.dispose();
+          });
+        }
+      });
+    }
+  }
+
+  function makeCanvasTexture(draw, repeatX = 1, repeatY = 1) {
+    const c = document.createElement("canvas");
+    c.width = 512;
+    c.height = 512;
+    const ctx = c.getContext("2d");
+    draw(ctx, c.width, c.height);
+    const texture = new THREE.CanvasTexture(c);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(repeatX, repeatY);
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return texture;
+  }
+
+  const droneTexture = makeCanvasTexture((ctx, w, h) => {
+    const gradient = ctx.createLinearGradient(0, 0, w, h);
+    gradient.addColorStop(0, "#3b1011");
+    gradient.addColorStop(0.48, "#8d2d27");
+    gradient.addColorStop(1, "#241112");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
+
+    const random = seededRandom(418);
+    for (let i = 0; i < 240; i++) {
+      const y = random() * h;
+      const alpha = 0.04 + random() * 0.13;
+      ctx.strokeStyle = `rgba(255,210,175,${alpha})`;
+      ctx.lineWidth = 1 + random() * 3;
+      ctx.beginPath();
+      ctx.moveTo(-20, y);
+      ctx.bezierCurveTo(w * .3, y + random() * 30 - 15, w * .7, y + random() * 30 - 15, w + 20, y + random() * 22 - 11);
+      ctx.stroke();
+    }
+
+    for (let i = 0; i < 50; i++) {
+      ctx.fillStyle = `rgba(10,8,8,${0.08 + random() * 0.12})`;
+      ctx.fillRect(random() * w, random() * h, 10 + random() * 60, 2 + random() * 5);
+    }
+  }, 2, 2);
+
+  const fieldTexture = makeCanvasTexture((ctx, w, h) => {
+    ctx.fillStyle = "#6f9d54";
+    ctx.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 44) {
+      ctx.fillStyle = x % 88 === 0 ? "#729e4b" : "#5f8f43";
+      ctx.fillRect(x, 0, 28, h);
+      ctx.fillStyle = "rgba(218,190,125,.38)";
+      ctx.fillRect(x + 29, 0, 5, h);
+    }
+    ctx.strokeStyle = "rgba(255,255,255,.08)";
+    for (let y = 0; y < h; y += 32) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+  }, 7, 7);
+
+  function createTree(scale = 1, pine = false) {
+    const tree = new THREE.Group();
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12 * scale, 0.17 * scale, 1.2 * scale, 8),
+      new THREE.MeshStandardMaterial({ color: 0x60442b, roughness: 1 })
+    );
+    trunk.position.y = 0.6 * scale;
+    trunk.castShadow = true;
+    tree.add(trunk);
+
+    const leafMaterial = new THREE.MeshStandardMaterial({
+      color: pine ? 0x1f5f3a : 0x3d7c36,
+      roughness: 0.95
+    });
+
+    if (pine) {
+      for (let i = 0; i < 3; i++) {
+        const crown = new THREE.Mesh(
+          new THREE.ConeGeometry((0.7 - i * 0.11) * scale, 1.45 * scale, 9),
+          leafMaterial
+        );
+        crown.position.y = (1.25 + i * 0.48) * scale;
+        crown.castShadow = true;
+        tree.add(crown);
+      }
+    } else {
+      const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(0.72 * scale, 1), leafMaterial);
+      crown.position.y = 1.52 * scale;
+      crown.scale.y = 1.18;
+      crown.castShadow = true;
+      tree.add(crown);
+    }
+    return tree;
+  }
+
+  function createCloud(x, y, z, scale = 1) {
+    const cloud = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.82,
+      roughness: 1,
+      depthWrite: false
+    });
+    const parts = [
+      [-1.1, 0, 0, 1.1], [0, .25, 0, 1.4], [1.15, 0, 0, 1], [.25, -.2, .25, 1.2]
+    ];
+    parts.forEach(([px, py, pz, s]) => {
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(s * scale, 16, 10), mat);
+      puff.position.set(px * scale, py * scale, pz * scale);
+      cloud.add(puff);
+    });
+    cloud.position.set(x, y, z);
+    cloud.userData.speed = 0.6 + Math.random() * 0.5;
+    return cloud;
+  }
+
+  function clearClouds() {
+    disposeGroup(cloudGroup);
+  }
+
+  function buildClouds(weather) {
+    clearClouds();
+    const count = weather === "clear" ? 5 : weather === "rain" ? 11 : 8;
+    const random = seededRandom(weather === "clear" ? 71 : weather === "rain" ? 92 : 113);
+    for (let i = 0; i < count; i++) {
+      const cloud = createCloud(
+        -65 + random() * 130,
+        24 + random() * 17,
+        -55 + random() * 110,
+        1.4 + random() * 2.4
+      );
+      if (weather === "rain") {
+        cloud.traverse(obj => {
+          if (obj.material) obj.material.color.setHex(0x7d8994);
+        });
+      }
+      cloudGroup.add(cloud);
+    }
+  }
+
+  // ---------- 지형 ----------
+  let currentTerrain = "plain";
+  let oceanSurface = null;
+  let oceanBasePositions = null;
+  let oceanNormalCounter = 0;
+  let launchHeight = 0.72;
+
+  function mountainHeight(x, z) {
+    const centerFlatten = Math.min(1, Math.hypot(x, z) / 13);
+    const hills =
+      8.5 * Math.exp(-((x + 28) ** 2 + (z + 24) ** 2) / 520) +
+      10.5 * Math.exp(-((x - 31) ** 2 + (z - 18) ** 2) / 600) +
+      7.2 * Math.exp(-((x - 8) ** 2 + (z + 39) ** 2) / 430) +
+      5.5 * Math.exp(-((x + 42) ** 2 + (z - 12) ** 2) / 520);
+    const detail = 0.8 * Math.sin(x * 0.12) * Math.cos(z * 0.1) + 0.45 * Math.sin((x + z) * 0.18);
+    return (hills + detail) * centerFlatten;
+  }
+
+  function plainHeight(x, z) {
+    const centerFlatten = Math.min(1, Math.hypot(x, z) / 10);
+    return centerFlatten * (0.18 * Math.sin(x * 0.15) + 0.12 * Math.cos(z * 0.17));
+  }
+
+  function getGroundHeight(x, z) {
+    if (currentTerrain === "mountain") return mountainHeight(x, z);
+    if (currentTerrain === "ocean") {
+      if (Math.hypot(x, z) < 7.2) return 0.65;
+      return 0;
+    }
+    return plainHeight(x, z);
+  }
+
+  function addLandingPad(y = 0.18, ocean = false) {
+    const padGroup = new THREE.Group();
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.25, 3.25, ocean ? 0.48 : 0.22, 64),
+      new THREE.MeshStandardMaterial({ color: 0x252c35, roughness: 0.84 })
+    );
+    base.position.y = y;
+    base.receiveShadow = true;
+    base.castShadow = ocean;
+    padGroup.add(base);
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(1.5, 2.3, 64),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = y + (ocean ? 0.25 : 0.13);
+    padGroup.add(ring);
+
+    const h1 = new THREE.Mesh(
+      new THREE.BoxGeometry(0.35, 0.03, 2.3),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    const h2 = h1.clone();
+    h1.position.set(-0.62, ring.position.y + 0.02, 0);
+    h2.position.set(0.62, ring.position.y + 0.02, 0);
+    padGroup.add(h1, h2);
+
+    environmentGroup.add(padGroup);
+  }
+
+  function buildPlainTerrain() {
+    launchHeight = 0.72;
+    const geometry = new THREE.PlaneGeometry(150, 150, 90, 90);
+    const pos = geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      pos.setZ(i, plainHeight(pos.getX(i), pos.getY(i)));
+    }
+    geometry.computeVertexNormals();
+    geometry.rotateX(-Math.PI / 2);
+
+    const terrain = new THREE.Mesh(
+      geometry,
+      new THREE.MeshStandardMaterial({ map: fieldTexture, roughness: 0.96, color: 0xffffff })
+    );
+    terrain.receiveShadow = true;
+    environmentGroup.add(terrain);
+
+    const random = seededRandom(163);
+    for (let i = 0; i < 70; i++) {
+      const x = -68 + random() * 136;
+      const z = -68 + random() * 136;
+      if (Math.abs(x) < 23 && Math.abs(z) < 23) continue;
+      const tree = createTree(0.75 + random() * 0.8, false);
+      tree.position.set(x, plainHeight(x, z), z);
+      environmentGroup.add(tree);
+    }
+
+    // 실제 들판처럼 보이는 길과 경계
+    const road = new THREE.Mesh(
+      new THREE.PlaneGeometry(8, 150),
+      new THREE.MeshStandardMaterial({ color: 0x9d8d72, roughness: 1 })
+    );
+    road.rotation.x = -Math.PI / 2;
+    road.position.set(-42, 0.25, 0);
+    road.receiveShadow = true;
+    environmentGroup.add(road);
+
+    addLandingPad(0.16, false);
+  }
+
+  function buildMountainTerrain() {
+    launchHeight = 0.78;
+    const geometry = new THREE.PlaneGeometry(170, 170, 130, 130);
+    const pos = geometry.attributes.position;
+    const colors = [];
+    const color = new THREE.Color();
+
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const z = pos.getY(i);
+      const h = mountainHeight(x, z);
+      pos.setZ(i, h);
+
+      if (h > 8.2) color.set(0xb8bcc0);
+      else if (h > 4.5) color.set(0x5c7554);
+      else color.set(0x426c3f);
+      colors.push(color.r, color.g, color.b);
+    }
+
+    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
+    geometry.rotateX(-Math.PI / 2);
+
+    const terrain = new THREE.Mesh(
+      geometry,
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.98 })
+    );
+    terrain.receiveShadow = true;
+    terrain.castShadow = true;
+    environmentGroup.add(terrain);
+
+    const random = seededRandom(246);
+    for (let i = 0; i < 105; i++) {
+      const x = -75 + random() * 150;
+      const z = -75 + random() * 150;
+      const h = mountainHeight(x, z);
+      if (Math.hypot(x, z) < 17 || h > 8.5) continue;
+      const tree = createTree(0.65 + random() * 0.85, true);
+      tree.position.set(x, h, z);
+      environmentGroup.add(tree);
+    }
+
+    // 능선 주변 바위
+    for (let i = 0; i < 22; i++) {
+      const angle = random() * Math.PI * 2;
+      const radius = 28 + random() * 42;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const rock = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(1.2 + random() * 2, 0),
+        new THREE.MeshStandardMaterial({ color: 0x6c716f, roughness: 1 })
+      );
+      rock.position.set(x, mountainHeight(x, z) + 0.7, z);
+      rock.scale.y = 0.65 + random() * 0.8;
+      rock.rotation.set(random(), random(), random());
+      rock.castShadow = true;
+      environmentGroup.add(rock);
+    }
+
+    addLandingPad(0.2, false);
+  }
+
+  function buildOceanTerrain() {
+    launchHeight = 1.43;
+    const geometry = new THREE.PlaneGeometry(190, 190, 82, 82);
+    geometry.rotateX(-Math.PI / 2);
+    oceanBasePositions = Float32Array.from(geometry.attributes.position.array);
+
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x1478a8,
+      roughness: 0.25,
+      metalness: 0.12,
+      transparent: true,
+      opacity: 0.92
+    });
+
+    oceanSurface = new THREE.Mesh(geometry, material);
+    oceanSurface.receiveShadow = true;
+    environmentGroup.add(oceanSurface);
+
+    const islandBase = new THREE.Mesh(
+      new THREE.CylinderGeometry(8.2, 10.5, 1.5, 48),
+      new THREE.MeshStandardMaterial({ color: 0x76654c, roughness: 1 })
+    );
+    islandBase.position.y = 0.15;
+    islandBase.castShadow = true;
+    islandBase.receiveShadow = true;
+    environmentGroup.add(islandBase);
+
+    const islandTop = new THREE.Mesh(
+      new THREE.CylinderGeometry(7.7, 8.25, 0.38, 48),
+      new THREE.MeshStandardMaterial({ color: 0x56824a, roughness: 1 })
+    );
+    islandTop.position.y = 1.05;
+    islandTop.receiveShadow = true;
+    environmentGroup.add(islandTop);
+
+    const random = seededRandom(351);
+    for (let i = 0; i < 32; i++) {
+      const angle = random() * Math.PI * 2;
+      const radius = 7.6 + random() * 3.2;
+      const rock = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.55 + random() * 1.3, 0),
+        new THREE.MeshStandardMaterial({ color: 0x6a6762, roughness: 1 })
+      );
+      rock.position.set(Math.cos(angle) * radius, 0.75 + random() * 0.35, Math.sin(angle) * radius);
+      rock.rotation.set(random(), random(), random());
+      rock.castShadow = true;
+      environmentGroup.add(rock);
+    }
+
+    // 먼 섬과 해안 암석
+    for (let i = 0; i < 12; i++) {
+      const angle = random() * Math.PI * 2;
+      const radius = 38 + random() * 40;
+      const rock = new THREE.Mesh(
+        new THREE.ConeGeometry(3 + random() * 5, 5 + random() * 11, 7),
+        new THREE.MeshStandardMaterial({ color: 0x4c5b55, roughness: 1 })
+      );
+      rock.position.set(Math.cos(angle) * radius, 1.5, Math.sin(angle) * radius);
+      rock.rotation.y = random() * Math.PI;
+      rock.castShadow = true;
+      environmentGroup.add(rock);
+    }
+
+    addLandingPad(1.16, true);
+  }
+
+  function buildTerrain(type) {
+    currentTerrain = type;
+    oceanSurface = null;
+    oceanBasePositions = null;
+    disposeGroup(environmentGroup);
+
+    if (type === "mountain") buildMountainTerrain();
+    else if (type === "ocean") buildOceanTerrain();
+    else buildPlainTerrain();
+
+    rebuildRoute();
+    updateEnvironmentLook();
+  }
+
+  // ---------- 사진을 참고한 3D 드론 모델 ----------
+  function createReferenceDrone() {
+    const drone = new THREE.Group();
+    drone.name = "사진 참고형 붉은 쿼드콥터";
+
+    const redMaterial = new THREE.MeshStandardMaterial({
+      map: droneTexture,
+      color: 0xffffff,
+      roughness: 0.66,
+      metalness: 0.14
+    });
+    const darkMaterial = new THREE.MeshStandardMaterial({
+      color: 0x15171c,
+      roughness: 0.55,
+      metalness: 0.38
+    });
+    const motorMaterial = new THREE.MeshStandardMaterial({
+      color: 0x25282d,
+      roughness: 0.4,
+      metalness: 0.62
+    });
+    const silverMaterial = new THREE.MeshStandardMaterial({
+      color: 0x9da3a7,
+      roughness: 0.42,
+      metalness: 0.58
+    });
+
+    // 사진 속 넓고 낮은 중앙 동체를 위에서 본 실루엣으로 제작
+    const shape = new THREE.Shape();
+    shape.moveTo(0, -1.75);
+    shape.lineTo(0.95, -1.2);
+    shape.lineTo(1.35, -0.35);
+    shape.lineTo(1.13, 1.05);
+    shape.lineTo(0.55, 1.55);
+    shape.lineTo(-0.55, 1.55);
+    shape.lineTo(-1.13, 1.05);
+    shape.lineTo(-1.35, -0.35);
+    shape.lineTo(-0.95, -1.2);
+    shape.closePath();
+
+    const bodyGeometry = new THREE.ExtrudeGeometry(shape, {
+      depth: 0.62,
+      bevelEnabled: true,
+      bevelSegments: 3,
+      steps: 1,
+      bevelSize: 0.18,
+      bevelThickness: 0.12
+    });
+    bodyGeometry.center();
+    bodyGeometry.rotateX(-Math.PI / 2);
+
+    const body = new THREE.Mesh(bodyGeometry, redMaterial);
+    body.scale.set(1.08, 1, 1.14);
+    body.castShadow = true;
+    drone.add(body);
+
+    const topShell = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 32, 18),
+      redMaterial
+    );
+    topShell.scale.set(1.15, 0.34, 1.05);
+    topShell.position.set(0, 0.43, 0.1);
+    topShell.castShadow = true;
+    drone.add(topShell);
+
+    // 사진의 전면 은색 돌출부
+    const frontModule = new THREE.Mesh(
+      new THREE.BoxGeometry(1.05, 0.62, 0.85),
+      silverMaterial
+    );
+    frontModule.position.set(0, 0.13, -1.58);
+    frontModule.rotation.x = -0.08;
+    frontModule.castShadow = true;
+    drone.add(frontModule);
+
+    const frontStripe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.72, 0.07, 0.88),
+      new THREE.MeshStandardMaterial({ color: 0x4d555b, roughness: 0.6 })
+    );
+    frontStripe.position.set(0, 0.45, -1.58);
+    frontStripe.rotation.x = -0.08;
+    drone.add(frontStripe);
+
+    // 사진처럼 X자 방향으로 뻗은 4개 암
+    const arms = [];
+    const propellers = [];
+    const guards = [];
+    const armAngles = [45, 135, 225, 315].map(THREE.MathUtils.degToRad);
+
+    armAngles.forEach((angle, index) => {
+      const pivot = new THREE.Group();
+      pivot.rotation.y = -angle;
+
+      const arm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.2, 0.34, 3.65, 10),
+        redMaterial
+      );
+      arm.rotation.z = Math.PI / 2;
+      arm.position.x = 2.05;
+      arm.castShadow = true;
+      pivot.add(arm);
+
+      const motor = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.55, 0.62, 0.5, 24),
+        motorMaterial
+      );
+      motor.position.set(3.84, 0.14, 0);
+      motor.castShadow = true;
+      pivot.add(motor);
+
+      const motorTop = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.34, 0.34, 0.14, 24),
+        darkMaterial
+      );
+      motorTop.position.set(3.84, 0.45, 0);
+      pivot.add(motorTop);
+
+      const propGroup = new THREE.Group();
+      propGroup.position.set(3.84, 0.56, 0);
+
+      const bladeMat = new THREE.MeshStandardMaterial({
+        map: droneTexture,
+        color: 0x3f2526,
+        roughness: 0.6,
+        metalness: 0.15
+      });
+
+      const blade1 = new THREE.Mesh(new THREE.BoxGeometry(3.05, 0.055, 0.27), bladeMat);
+      const blade2 = new THREE.Mesh(new THREE.BoxGeometry(3.05, 0.055, 0.27), bladeMat);
+      blade2.rotation.y = Math.PI / 2;
+      blade1.castShadow = blade2.castShadow = true;
+      propGroup.add(blade1, blade2);
+
+      const hub = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.18, 0.15, 20),
+        silverMaterial
+      );
+      hub.position.y = 0.05;
+      propGroup.add(hub);
+      pivot.add(propGroup);
+
+      // 사진 속 큰 원형 보호 가드와 지지대
+      const guard = new THREE.Mesh(
+        new THREE.TorusGeometry(1.62, 0.065, 8, 64),
+        new THREE.MeshStandardMaterial({ color: 0x241d20, roughness: 0.7, metalness: 0.35 })
+      );
+      guard.rotation.x = Math.PI / 2;
+      guard.position.set(3.84, 0.24, 0);
+      guard.castShadow = true;
+      pivot.add(guard);
+
+      [-1, 1].forEach(side => {
+        const support = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.035, 0.035, 1.55, 8),
+          darkMaterial
+        );
+        support.position.set(3.84 + side * 0.76, 0.24, 0);
+        support.rotation.z = Math.PI / 2;
+        pivot.add(support);
+      });
+
+      // 사진에 보이는 가는 착륙 다리
+      const leg = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.07, 0.085, 1.35, 9),
+        redMaterial
+      );
+      leg.position.set(2.15, -0.82, 0);
+      leg.rotation.z = index % 2 === 0 ? -0.12 : 0.12;
+      leg.castShadow = true;
+      pivot.add(leg);
+
+      drone.add(pivot);
+      arms.push(pivot);
+      guards.push(guard);
+      propellers.push({ group: propGroup, direction: index % 2 === 0 ? 1 : -1 });
+    });
+
+    const belly = new THREE.Mesh(
+      new THREE.BoxGeometry(1.35, 0.32, 0.95),
+      darkMaterial
+    );
+    belly.position.y = -0.48;
+    belly.castShadow = true;
+    drone.add(belly);
+
+    const frontLight = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 16, 12),
+      new THREE.MeshStandardMaterial({
+        color: 0x60a5fa,
+        emissive: 0x60a5fa,
+        emissiveIntensity: 2.4
+      })
+    );
+    frontLight.position.set(0, 0.08, -2.04);
+    drone.add(frontLight);
+
+    drone.userData.propellers = propellers;
+    drone.userData.guards = guards;
+    drone.scale.setScalar(0.72);
+    return drone;
+  }
+
+  const drone = createReferenceDrone();
+  scene.add(drone);
+
+  // ---------- 정사각형 자동 경로 ----------
+  const squarePoints = [
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(-16, 0, -16),
+    new THREE.Vector3(16, 0, -16),
+    new THREE.Vector3(16, 0, 16),
+    new THREE.Vector3(-16, 0, 16),
+    new THREE.Vector3(0, 0, 0)
+  ];
+  const waypointMarkers = [];
+
+  function rebuildRoute() {
+    disposeGroup(routeGroup);
+    waypointMarkers.length = 0;
+
+    const routeY = launchHeight + 0.12;
+    const linePoints = squarePoints.map(point => new THREE.Vector3(point.x, routeY, point.z));
+    const routeGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
+    const routeLine = new THREE.Line(
+      routeGeometry,
+      new THREE.LineDashedMaterial({ color: 0x4da3ff, dashSize: 0.8, gapSize: 0.42 })
+    );
+    routeLine.computeLineDistances();
+    routeGroup.add(routeLine);
+
+    squarePoints.slice(1, -1).forEach((point, index) => {
+      const marker = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.42, 0.42, 0.17, 28),
+        new THREE.MeshStandardMaterial({
+          color: 0xfacc15,
+          emissive: 0x6f5200,
+          emissiveIntensity: 0.45
+        })
+      );
+      marker.position.set(point.x, routeY + 0.05, point.z);
+      marker.castShadow = true;
+      routeGroup.add(marker);
+      waypointMarkers.push(marker);
+    });
+  }
+
+  // ---------- 기상 입자 ----------
+  let rainSystem = null;
+  let snowSystem = null;
+  let windSystem = null;
+  let rainPositions = null;
+  let snowPositions = null;
+  let windPositions = null;
+  let windCount = 0;
+
+  function clearWeatherSystems() {
+    disposeGroup(weatherGroup);
+    rainSystem = snowSystem = windSystem = null;
+    rainPositions = snowPositions = windPositions = null;
+  }
+
+  function createRain() {
+    const count = 950;
+    const positions = new Float32Array(count * 2 * 3);
+    const random = seededRandom(772);
+    for (let i = 0; i < count; i++) {
+      const x = -45 + random() * 90;
+      const y = 2 + random() * 45;
+      const z = -45 + random() * 90;
+      const index = i * 6;
+      positions[index] = x;
+      positions[index + 1] = y;
+      positions[index + 2] = z;
+      positions[index + 3] = x + 0.12;
+      positions[index + 4] = y - 0.9;
+      positions[index + 5] = z;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.LineBasicMaterial({
+      color: 0xa7d8ff,
+      transparent: true,
+      opacity: 0.72
+    });
+    rainSystem = new THREE.LineSegments(geometry, material);
+    rainPositions = geometry.attributes.position;
+    weatherGroup.add(rainSystem);
+  }
+
+  function createSnow() {
+    const count = 820;
+    const positions = new Float32Array(count * 3);
+    const random = seededRandom(813);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = -45 + random() * 90;
+      positions[i * 3 + 1] = 2 + random() * 44;
+      positions[i * 3 + 2] = -45 + random() * 90;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.24,
+      transparent: true,
+      opacity: 0.88,
+      depthWrite: false
+    });
+    snowSystem = new THREE.Points(geometry, material);
+    snowPositions = geometry.attributes.position;
+    weatherGroup.add(snowSystem);
+  }
+
+  function createWindLines() {
+    windCount = 170;
+    const positions = new Float32Array(windCount * 2 * 3);
+    const random = seededRandom(967);
+    for (let i = 0; i < windCount; i++) {
+      const index = i * 6;
+      const x = -45 + random() * 90;
+      const y = 2 + random() * 30;
+      const z = -45 + random() * 90;
+      positions[index] = x;
+      positions[index + 1] = y;
+      positions[index + 2] = z;
+      positions[index + 3] = x + 1.4;
+      positions[index + 4] = y;
+      positions[index + 5] = z;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.LineBasicMaterial({
+      color: 0xd7f2ff,
+      transparent: true,
+      opacity: 0.28
+    });
+    windSystem = new THREE.LineSegments(geometry, material);
+    windPositions = geometry.attributes.position;
+    weatherGroup.add(windSystem);
+  }
+
+  function rebuildWeather() {
+    clearWeatherSystems();
+    const weather = $("weatherSelect").value;
+    createWindLines();
+    if (weather === "rain") createRain();
+    if (weather === "snow") createSnow();
+    buildClouds(weather);
+    updateEnvironmentLook();
+  }
+
+  function updateEnvironmentLook() {
+    const weather = $("weatherSelect").value;
+    const visibility = Number($("visibility").value);
+
+    let bg = 0x9fd7f5;
+    let fog = 0xa9d8ed;
+    let fogDensity = 0.0058 / Math.max(0.35, visibility);
+    let sunIntensity = 2.7;
+    let hemiIntensity = 2.25;
+
+    if (weather === "rain") {
+      bg = 0x758d9d;
+      fog = 0x778a95;
+      fogDensity = 0.012 / Math.max(0.4, visibility);
+      sunIntensity = 1.15;
+      hemiIntensity = 1.5;
+    } else if (weather === "snow") {
+      bg = 0xcbd8df;
+      fog = 0xdbe4e8;
+      fogDensity = 0.011 / Math.max(0.4, visibility);
+      sunIntensity = 1.35;
+      hemiIntensity = 1.85;
+    }
+
+    if (currentTerrain === "ocean" && weather === "clear") {
+      bg = 0x72bee4;
+      fog = 0x8cc7df;
+    }
+
+    scene.background.setHex(bg);
+    scene.fog.color.setHex(fog);
+    scene.fog.density = fogDensity;
+    sun.intensity = sunIntensity;
+    hemisphere.intensity = hemiIntensity;
+  }
+
+  // ---------- 비행 시뮬레이션 ----------
+  const STAGES = {
+    IDLE: "대기",
+    TAKEOFF: "자동 이륙",
+    ROUTE: "정사각형 경로 비행",
+    RETURN: "출발점 복귀",
+    LAND: "자동 착륙",
+    EMERGENCY: "비상 착륙",
+    FLIP: "드론 뒤집힘",
+    COMPLETE: "임무 완료",
+    STOPPED: "비행 종료"
+  };
+
+  const sim = {
+    running: false,
+    paused: false,
+    elapsed: 0,
+    stage: STAGES.IDLE,
+    waypointIndex: 1,
+    position: new THREE.Vector3(0, launchHeight + 0.8, 0),
+    velocity: new THREE.Vector3(),
+    target: new THREE.Vector3(),
+    targetAltitude: 12,
+    flightSpeed: 1,
+    battery: 88,
+    startBattery: 88,
+    windSpeed: 3,
+    gustSpeed: 5,
+    windDirection: 90,
+    temperature: 24,
+    payload: 100,
+    autopilot: 1,
+    safety: 100,
+    scenario: "custom",
+    flipElapsed: 0,
+    flipTriggered: false,
+    maxTilt: 0,
+    maxDrift: 0
+  };
+
+  const clock = new THREE.Clock();
+  let gustPhase = 0;
+  let toastTimer = null;
+
+  function showToast(message, tone = "normal") {
+    const toast = $("toast");
+    toast.textContent = message;
+    toast.style.background = tone === "danger"
+      ? "rgba(127, 29, 29, .94)"
+      : tone === "safe"
+        ? "rgba(20, 83, 45, .94)"
+        : "rgba(15, 23, 42, .94)";
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 2800);
+  }
+
+  function readSettings() {
+    const settings = {
+      terrain: $("terrainSelect").value,
+      weather: $("weatherSelect").value,
+      windSpeed: Number($("windSpeed").value),
+      gustSpeed: Number($("gustSpeed").value),
+      windDirection: Number($("windDirection").value),
+      temperature: Number($("temperature").value),
+      targetAltitude: Number($("targetAltitude").value),
+      flightSpeed: Number($("flightSpeed").value),
+      startBattery: Number($("batteryStart").value),
+      payload: Number($("payload").value),
+      autopilot: Number($("autopilot").value)
+    };
+
+    if (Object.values(settings).some(value => typeof value === "number" && Number.isNaN(value))) {
+      showToast("입력값을 다시 확인해 주세요.", "danger");
+      return null;
+    }
+    if (settings.targetAltitude < 4 || settings.targetAltitude > 30) {
+      showToast("목표 고도는 4~30m 사이로 설정해 주세요.", "danger");
+      return null;
+    }
+    return settings;
+  }
+
+  function setInputsLocked(locked) {
+    document.querySelectorAll("#sidebar input, #sidebar select, [data-scenario]").forEach(element => {
+      element.disabled = locked;
+    });
+  }
+
+  function getWindVector() {
+    const angle = THREE.MathUtils.degToRad(sim.windDirection);
+    const base = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)).multiplyScalar(sim.windSpeed);
+    gustPhase += 0.022;
+    const pulse = Math.max(0, Math.sin(gustPhase * 1.8)) * Math.max(0, Math.sin(gustPhase * 0.36));
+    const directionShift = Math.sin(gustPhase * 2.6) * 0.28;
+    const gust = new THREE.Vector3(
+      Math.sin(angle + directionShift), 0, Math.cos(angle + directionShift)
+    ).multiplyScalar(sim.gustSpeed * pulse);
+    return base.add(gust);
+  }
+
+  function restHeightAt(x = 0, z = 0) {
+    return getGroundHeight(x, z) + 0.8;
+  }
+
+  function resetDronePosition() {
+    sim.position.set(0, launchHeight + 0.78, 0);
+    sim.velocity.set(0, 0, 0);
+    drone.position.copy(sim.position);
+    drone.rotation.set(0, 0, 0);
+  }
+
+  function resetSimulation(keepSettings = true) {
+    sim.running = false;
+    sim.paused = false;
+    sim.elapsed = 0;
+    sim.stage = STAGES.IDLE;
+    sim.waypointIndex = 1;
+    sim.flipElapsed = 0;
+    sim.flipTriggered = false;
+    sim.maxTilt = 0;
+    sim.maxDrift = 0;
+    sim.safety = 100;
+    sim.battery = Number($("batteryStart").value) || 88;
+
+    resetDronePosition();
+    setInputsLocked(false);
+    $("startButton").disabled = false;
+    $("pauseButton").disabled = true;
+    $("pauseButton").textContent = "일시정지";
+    $("missionMessage").textContent = "대기 중 · 우측 상단 메뉴에서 지형과 기상 조건을 설정하세요.";
+    updateHud();
+
+    if (!keepSettings) {
+      applyScenario("safe", false);
+    }
+  }
+
+  function startSimulation() {
+    if (sim.running && sim.paused) {
+      sim.paused = false;
+      $("pauseButton").textContent = "일시정지";
+      showToast("자동 비행을 재개했습니다.");
+      return;
+    }
+    if (sim.running) return;
+
+    const settings = readSettings();
+    if (!settings) return;
+
+    if (settings.terrain !== currentTerrain) buildTerrain(settings.terrain);
+    rebuildWeather();
+
+    sim.running = true;
+    sim.paused = false;
+    sim.elapsed = 0;
+    sim.stage = STAGES.TAKEOFF;
+    sim.waypointIndex = 1;
+    sim.targetAltitude = settings.targetAltitude;
+    sim.flightSpeed = settings.flightSpeed;
+    sim.battery = settings.startBattery;
+    sim.startBattery = settings.startBattery;
+    sim.windSpeed = settings.windSpeed;
+    sim.gustSpeed = settings.gustSpeed;
+    sim.windDirection = settings.windDirection;
+    sim.temperature = settings.temperature;
+    sim.payload = settings.payload;
+    sim.autopilot = settings.autopilot;
+    sim.flipElapsed = 0;
+    sim.flipTriggered = false;
+    sim.safety = 100;
+    sim.maxTilt = 0;
+    sim.maxDrift = 0;
+
+    resetDronePosition();
+    setInputsLocked(true);
+    $("startButton").disabled = true;
+    $("pauseButton").disabled = false;
+    closeSidebar();
+    showToast("자동 이륙을 시작합니다.", "safe");
+  }
+
+  function togglePause() {
+    if (!sim.running) return;
+    sim.paused = !sim.paused;
+    $("pauseButton").textContent = sim.paused ? "계속 비행" : "일시정지";
+    showToast(sim.paused ? "시뮬레이션을 일시정지했습니다." : "시뮬레이션을 재개했습니다.");
+  }
+
+  function chooseTarget() {
+    const cruiseY = launchHeight + sim.targetAltitude;
+
+    if (sim.stage === STAGES.TAKEOFF) {
+      sim.target.set(0, cruiseY, 0);
+      if (Math.abs(sim.position.y - cruiseY) < 0.45) {
+        sim.stage = STAGES.ROUTE;
+        sim.waypointIndex = 1;
+        showToast("목표 고도 도달 · 정사각형 경로 비행을 시작합니다.");
+      }
+      return;
+    }
+
+    if (sim.stage === STAGES.ROUTE) {
+      const point = squarePoints[sim.waypointIndex];
+      sim.target.set(point.x, cruiseY, point.z);
+      const distance = Math.hypot(sim.position.x - point.x, sim.position.z - point.z);
+      if (distance < 1.05) {
+        sim.waypointIndex += 1;
+        if (sim.waypointIndex >= squarePoints.length - 1) {
+          sim.stage = STAGES.RETURN;
+          showToast("정사각형 경로 완료 · 출발점으로 복귀합니다.");
+        }
+      }
+      return;
+    }
+
+    if (sim.stage === STAGES.RETURN) {
+      sim.target.set(0, cruiseY, 0);
+      if (Math.hypot(sim.position.x, sim.position.z) < 0.95) {
+        sim.stage = STAGES.LAND;
+        showToast("출발점 도착 · 자동 착륙을 시작합니다.");
+      }
+      return;
+    }
+
+    if (sim.stage === STAGES.LAND || sim.stage === STAGES.EMERGENCY) {
+      sim.target.set(0, launchHeight + 0.78, 0);
+    }
+  }
+
+  function triggerFlip() {
+    if (sim.flipTriggered) return;
+    sim.flipTriggered = true;
+    sim.stage = STAGES.FLIP;
+    sim.flipElapsed = 0;
+    showToast("강한 돌풍으로 자세 보정 한계를 초과했습니다.", "danger");
+  }
+
+  function finishSimulation(message, safe = true) {
+    sim.running = false;
+    sim.paused = false;
+    sim.stage = safe ? STAGES.COMPLETE : STAGES.STOPPED;
+    sim.velocity.set(0, 0, 0);
+    setInputsLocked(false);
+    $("startButton").disabled = false;
+    $("pauseButton").disabled = true;
+    $("pauseButton").textContent = "일시정지";
+    showToast(message, safe ? "safe" : "danger");
+  }
+
+  function updateFlight(dt) {
+    if (!sim.running || sim.paused) return;
+
+    sim.elapsed += dt;
+
+    if (sim.stage === STAGES.FLIP) {
+      sim.flipElapsed += dt;
+      const wind = getWindVector();
+      sim.position.x += wind.x * dt * 0.08;
+      sim.position.z += wind.z * dt * 0.08;
+      sim.position.y -= dt * (0.75 + sim.flipElapsed * 0.2);
+      drone.rotation.x += dt * 3.2;
+      drone.rotation.z += dt * 2.35;
+      drone.position.copy(sim.position);
+
+      const ground = getGroundHeight(sim.position.x, sim.position.z) + 0.72;
+      if (sim.position.y <= ground || sim.flipElapsed > 7) {
+        sim.position.y = Math.max(ground, sim.position.y);
+        drone.position.copy(sim.position);
+        finishSimulation("드론 뒤집힘 조건 시뮬레이션이 종료되었습니다.", false);
+      }
+      return;
+    }
+
+    chooseTarget();
+
+    const wind = getWindVector();
+    const toTarget = sim.target.clone().sub(sim.position);
+    const payloadFactor = 1 + sim.payload / 1450;
+    const controlStrength = 1.92 * sim.autopilot / payloadFactor;
+    const maxHorizontalSpeed = 5.0 / sim.flightSpeed;
+    const maxVerticalSpeed = 2.7 / sim.flightSpeed;
+
+    const desiredVelocity = new THREE.Vector3(
+      THREE.MathUtils.clamp(toTarget.x * 0.74, -maxHorizontalSpeed, maxHorizontalSpeed),
+      THREE.MathUtils.clamp(toTarget.y * 1.02, -maxVerticalSpeed, maxVerticalSpeed),
+      THREE.MathUtils.clamp(toTarget.z * 0.74, -maxHorizontalSpeed, maxHorizontalSpeed)
+    );
+
+    const batteryPower = sim.battery >= 18 ? 1 : THREE.MathUtils.clamp(sim.battery / 18, 0.24, 1);
+    const controlAcceleration = desiredVelocity.sub(sim.velocity).multiplyScalar(controlStrength * batteryPower);
+    const windAcceleration = wind.clone().multiplyScalar(0.055 / payloadFactor);
+    const acceleration = controlAcceleration.add(windAcceleration);
+
+    sim.velocity.addScaledVector(acceleration, dt);
+    sim.velocity.multiplyScalar(Math.pow(0.987, dt * 60));
+    sim.velocity.y = THREE.MathUtils.clamp(sim.velocity.y, -3.6, 3.6);
+
+    const horizontal = new THREE.Vector2(sim.velocity.x, sim.velocity.z);
+    if (horizontal.length() > 7.4) {
+      horizontal.setLength(7.4);
+      sim.velocity.x = horizontal.x;
+      sim.velocity.z = horizontal.y;
+    }
+
+    sim.position.addScaledVector(sim.velocity, dt);
+
+    // 배터리 소모: 풍속 제곱, 돌풍, 적재, 온도, 상승을 반영
+    const tempPenalty = sim.temperature < 5
+      ? (5 - sim.temperature) * 0.012
+      : sim.temperature > 32
+        ? (sim.temperature - 32) * 0.008
+        : 0;
+    const drain =
+      0.05 +
+      sim.windSpeed * sim.windSpeed * 0.00085 +
+      sim.gustSpeed * 0.0007 +
+      sim.payload * 0.000026 +
+      Math.max(0, sim.velocity.y) * 0.018 +
+      tempPenalty;
+    sim.battery = Math.max(0, sim.battery - drain * dt);
+
+    const windRisk = Math.min(38, wind.length() * 1.45);
+    const batteryRisk = sim.battery < 30 ? (30 - sim.battery) * 1.25 : 0;
+    const payloadRisk = Math.max(0, sim.payload - 420) * 0.026;
+    const temperatureRisk = Math.max(0, Math.abs(sim.temperature - 22) - 16) * 1.1;
+    const autopilotRisk = (1.18 - sim.autopilot) * 18;
+    sim.safety = Math.round(THREE.MathUtils.clamp(
+      100 - windRisk - batteryRisk - payloadRisk - temperatureRisk - autopilotRisk,
+      0,
+      100
+    ));
+
+    if (sim.stage !== STAGES.LAND && sim.stage !== STAGES.EMERGENCY && sim.battery <= 13) {
+      sim.stage = STAGES.EMERGENCY;
+      showToast("배터리가 부족하여 비상 착륙으로 전환합니다.", "danger");
+    }
+
+    // 뒤집힘 조건 버튼을 선택한 경우 실제로 시각적 뒤집힘을 보장
+    if (sim.scenario === "flip" && sim.elapsed > 17.5 && sim.stage === STAGES.ROUTE) {
+      triggerFlip();
+      return;
+    }
+
+    // 사용자 직접 설정에서도 극단적 돌풍이면 뒤집힘 가능
+    if (sim.gustSpeed >= 21 && sim.windSpeed >= 13 && sim.autopilot <= 0.75 && sim.elapsed > 20) {
+      triggerFlip();
+      return;
+    }
+
+    const maxTilt = THREE.MathUtils.degToRad(39);
+    const pitchTarget = THREE.MathUtils.clamp(-sim.velocity.z * 0.065 - wind.z * 0.018, -maxTilt, maxTilt);
+    const rollTarget = THREE.MathUtils.clamp(sim.velocity.x * 0.065 + wind.x * 0.018, -maxTilt, maxTilt);
+    drone.rotation.x = THREE.MathUtils.lerp(drone.rotation.x, pitchTarget, 0.085);
+    drone.rotation.z = THREE.MathUtils.lerp(drone.rotation.z, -rollTarget, 0.085);
+
+    if (Math.hypot(sim.velocity.x, sim.velocity.z) > 0.22) {
+      const desiredYaw = Math.atan2(sim.velocity.x, sim.velocity.z);
+      let yawDelta = desiredYaw - drone.rotation.y;
+      yawDelta = Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta));
+      drone.rotation.y += yawDelta * 0.04;
+    }
+
+    sim.maxTilt = Math.max(sim.maxTilt, THREE.MathUtils.radToDeg(Math.max(Math.abs(drone.rotation.x), Math.abs(drone.rotation.z))));
+    sim.maxDrift = Math.max(sim.maxDrift, Math.hypot(sim.position.x - sim.target.x, sim.position.z - sim.target.z));
+
+    const ground = getGroundHeight(sim.position.x, sim.position.z) + 0.72;
+    const landingNearHome = Math.hypot(sim.position.x, sim.position.z) < 2.8;
+
+    if ((sim.stage === STAGES.LAND || sim.stage === STAGES.EMERGENCY) && landingNearHome && sim.position.y <= launchHeight + 0.85) {
+      sim.position.set(0, launchHeight + 0.78, 0);
+      drone.position.copy(sim.position);
+      finishSimulation(sim.stage === STAGES.EMERGENCY ? "비상 착륙을 완료했습니다." : "자동 비행 임무를 완료했습니다.", sim.stage !== STAGES.EMERGENCY);
+      return;
+    }
+
+    if (sim.position.y <= ground && !(landingNearHome && (sim.stage === STAGES.LAND || sim.stage === STAGES.EMERGENCY))) {
+      sim.position.y = ground;
+      drone.position.copy(sim.position);
+      finishSimulation("지형과의 안전 거리 부족으로 비행을 종료했습니다.", false);
+      return;
+    }
+
+    drone.position.copy(sim.position);
+  }
+
+  // ---------- 환경 애니메이션 ----------
+  function updateOcean(time) {
+    if (!oceanSurface || !oceanBasePositions) return;
+    const position = oceanSurface.geometry.attributes.position;
+    for (let i = 0; i < position.count; i++) {
+      const x = oceanBasePositions[i * 3];
+      const z = oceanBasePositions[i * 3 + 2];
+      position.setY(i,
+        oceanBasePositions[i * 3 + 1] +
+        Math.sin(x * 0.12 + time * 1.25) * 0.22 +
+        Math.cos(z * 0.15 - time * 0.95) * 0.16
+      );
+    }
+    position.needsUpdate = true;
+    oceanNormalCounter += 1;
+    if (oceanNormalCounter % 6 === 0) oceanSurface.geometry.computeVertexNormals();
+  }
+
+  function updateWeatherParticles(dt, time) {
+    const angle = THREE.MathUtils.degToRad(Number($("windDirection").value));
+    const wind = Number($("windSpeed").value);
+    const dx = Math.sin(angle) * wind;
+    const dz = Math.cos(angle) * wind;
+
+    if (rainPositions) {
+      const array = rainPositions.array;
+      for (let i = 0; i < array.length; i += 6) {
+        array[i] += dx * dt * 0.22;
+        array[i + 1] -= dt * 19;
+        array[i + 2] += dz * dt * 0.22;
+        array[i + 3] += dx * dt * 0.22;
+        array[i + 4] -= dt * 19;
+        array[i + 5] += dz * dt * 0.22;
+        if (array[i + 1] < 0) {
+          const x = -45 + Math.random() * 90;
+          const y = 35 + Math.random() * 12;
+          const z = -45 + Math.random() * 90;
+          array[i] = x;
+          array[i + 1] = y;
+          array[i + 2] = z;
+          array[i + 3] = x + dx * 0.04;
+          array[i + 4] = y - 0.9;
+          array[i + 5] = z + dz * 0.04;
+        }
+      }
+      rainPositions.needsUpdate = true;
+    }
+
+    if (snowPositions) {
+      const array = snowPositions.array;
+      for (let i = 0; i < array.length; i += 3) {
+        array[i] += (dx * 0.08 + Math.sin(time * 1.2 + i) * 0.13) * dt;
+        array[i + 1] -= dt * (1.6 + (i % 7) * 0.07);
+        array[i + 2] += (dz * 0.08 + Math.cos(time + i) * 0.1) * dt;
+        if (array[i + 1] < 0) {
+          array[i] = -45 + Math.random() * 90;
+          array[i + 1] = 35 + Math.random() * 12;
+          array[i + 2] = -45 + Math.random() * 90;
+        }
+      }
+      snowPositions.needsUpdate = true;
+    }
+
+    if (windPositions) {
+      const array = windPositions.array;
+      const speed = 2 + wind * 0.45;
+      const vx = Math.sin(angle) * speed;
+      const vz = Math.cos(angle) * speed;
+      for (let i = 0; i < array.length; i += 6) {
+        array[i] += vx * dt;
+        array[i + 2] += vz * dt;
+        array[i + 3] += vx * dt;
+        array[i + 5] += vz * dt;
+        const out = Math.abs(array[i]) > 48 || Math.abs(array[i + 2]) > 48;
+        if (out) {
+          const x = -42 + Math.random() * 84;
+          const y = 2 + Math.random() * 30;
+          const z = -42 + Math.random() * 84;
+          array[i] = x;
+          array[i + 1] = y;
+          array[i + 2] = z;
+          array[i + 3] = x + Math.sin(angle) * 1.7;
+          array[i + 4] = y;
+          array[i + 5] = z + Math.cos(angle) * 1.7;
+        }
+      }
+      windPositions.needsUpdate = true;
+      windSystem.material.opacity = THREE.MathUtils.clamp(0.1 + wind * 0.025, 0.1, 0.56);
+    }
+
+    cloudGroup.children.forEach(cloud => {
+      cloud.position.x += Math.sin(angle) * cloud.userData.speed * dt * (1 + wind * 0.05);
+      cloud.position.z += Math.cos(angle) * cloud.userData.speed * dt * (1 + wind * 0.05);
+      if (Math.abs(cloud.position.x) > 80 || Math.abs(cloud.position.z) > 80) {
+        cloud.position.x *= -0.85;
+        cloud.position.z *= -0.85;
+      }
+    });
+  }
+
+  // ---------- HUD와 설정 ----------
+  function terrainLabel(value) {
+    return value === "mountain" ? "산지" : value === "ocean" ? "해양" : "평지";
+  }
+
+  function weatherLabel(value) {
+    return value === "rain" ? "비" : value === "snow" ? "눈" : "맑음";
+  }
+
+  function updateHud() {
+    const altitude = Math.max(0, sim.position.y - launchHeight - 0.78);
+    const speed = Math.hypot(sim.velocity.x, sim.velocity.z);
+    $("stageValue").textContent = sim.stage;
+    $("altitudeValue").textContent = `${altitude.toFixed(1)} m`;
+    $("speedValue").textContent = `${speed.toFixed(1)} m/s`;
+    $("batteryValue").textContent = `${sim.battery.toFixed(0)}%`;
+    $("safetyValue").textContent = `${sim.safety}점`;
+
+    $("batteryValue").style.color = sim.battery < 20 ? "#f87171" : "white";
+    $("safetyValue").style.color = sim.safety < 55 ? "#f87171" : sim.safety < 80 ? "#fbbf24" : "#86efac";
+
+    $("missionMessage").textContent = sim.running
+      ? `${sim.stage} · 목표 고도 ${sim.targetAltitude}m · 최대 기울기 ${sim.maxTilt.toFixed(1)}°`
+      : sim.stage === STAGES.COMPLETE || sim.stage === STAGES.STOPPED
+        ? `${sim.stage} · 남은 배터리 ${sim.battery.toFixed(1)}% · 최대 경로 오차 ${sim.maxDrift.toFixed(1)}m`
+        : "대기 중 · 우측 상단 메뉴에서 지형과 기상 조건을 설정하세요.";
+
+    $("weatherBadge").textContent = `${terrainLabel($("terrainSelect").value)} · ${weatherLabel($("weatherSelect").value)} · 바람 ${$("windSpeed").value}m/s`;
+  }
+
+  function applyScenario(type, notify = true) {
+    sim.scenario = type;
+
+    const scenarios = {
+      safe: {
+        terrainSelect: "plain", weatherSelect: "clear", windSpeed: 2,
+        gustSpeed: 3, windDirection: 80, temperature: 24,
+        visibility: 1, targetAltitude: 12, flightSpeed: 1,
+        batteryStart: 92, payload: 60, autopilot: 1.18
+      },
+      battery: {
+        terrainSelect: "mountain", weatherSelect: "snow", windSpeed: 6,
+        gustSpeed: 9, windDirection: 310, temperature: -3,
+        visibility: 0.72, targetAltitude: 12, flightSpeed: 1.08,
+        batteryStart: 18, payload: 300, autopilot: 0.9
+      },
+      flip: {
+        terrainSelect: "ocean", weatherSelect: "rain", windSpeed: 14,
+        gustSpeed: 22, windDirection: 240, temperature: 18,
+        visibility: 0.48, targetAltitude: 13, flightSpeed: 1,
+        batteryStart: 72, payload: 180, autopilot: 0.72
+      }
+    };
+
+    const values = scenarios[type];
+    Object.entries(values).forEach(([id, value]) => { $(id).value = value; });
+    buildTerrain(values.terrainSelect);
+    rebuildWeather();
+    resetSimulation(true);
+
+    if (notify) {
+      showToast(
+        type === "safe" ? "안전 조건을 적용했습니다." :
+        type === "battery" ? "배터리 부족 조건을 적용했습니다." :
+        "드론 뒤집힘 조건을 적용했습니다.",
+        type === "safe" ? "safe" : "danger"
+      );
+    }
+  }
+
+  function openSidebar() {
+    $("sidebar").classList.add("open");
+    $("sidebarBackdrop").classList.add("open");
+    $("menuButton").classList.add("open");
+    $("menuButton").setAttribute("aria-label", "설정 사이드바 닫기");
+  }
+
+  function closeSidebar() {
+    $("sidebar").classList.remove("open");
+    $("sidebarBackdrop").classList.remove("open");
+    $("menuButton").classList.remove("open");
+    $("menuButton").setAttribute("aria-label", "설정 사이드바 열기");
+  }
+
+  function toggleSidebar() {
+    $("sidebar").classList.contains("open") ? closeSidebar() : openSidebar();
+  }
+
+  // ---------- 이벤트 ----------
+  $("menuButton").addEventListener("click", toggleSidebar);
+  $("sidebarBackdrop").addEventListener("click", closeSidebar);
+  $("startButton").addEventListener("click", startSimulation);
+  $("pauseButton").addEventListener("click", togglePause);
+  $("resetButton").addEventListener("click", () => {
+    resetSimulation(true);
+    showToast("시뮬레이션을 초기화했습니다.");
+  });
+
+  document.querySelectorAll("[data-scenario]").forEach(button => {
+    button.addEventListener("click", () => applyScenario(button.dataset.scenario));
+  });
+
+  $("terrainSelect").addEventListener("change", event => {
+    if (!sim.running) {
+      buildTerrain(event.target.value);
+      resetSimulation(true);
+      showToast(`${terrainLabel(event.target.value)} 지형으로 변경했습니다.`);
+    }
+  });
+
+  ["weatherSelect", "visibility"].forEach(id => {
+    $(id).addEventListener("change", () => {
+      if (!sim.running) rebuildWeather();
+    });
+  });
+
+  ["windSpeed", "windDirection"].forEach(id => {
+    $(id).addEventListener("input", updateHud);
+  });
+
+  // 빠른 조건 적용 후 값을 직접 바꾸면 사용자 정의 조건으로 전환합니다.
+  [
+    "terrainSelect", "weatherSelect", "windSpeed", "gustSpeed", "windDirection",
+    "temperature", "visibility", "targetAltitude", "flightSpeed", "batteryStart",
+    "payload", "autopilot"
+  ].forEach(id => {
+    $(id).addEventListener("change", () => {
+      if (!sim.running) sim.scenario = "custom";
+    });
+  });
+
+  window.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeSidebar();
+  });
+
+  window.addEventListener("error", event => {
+    const overlay = $("loadingOverlay");
+    if (!overlay) return;
+    overlay.innerHTML = `
+      <div>
+        <b>3D 화면을 불러오지 못했습니다.</b>
+        <div class="smallNote">인터넷 연결을 확인하고 페이지를 새로고침해 주세요.<br>${event.message || "모듈 로딩 오류"}</div>
+      </div>`;
+  });
+
+  // ---------- 렌더링 루프 ----------
+  function resize() {
+    const width = app.clientWidth;
+    const height = app.clientHeight;
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.04);
+    const time = performance.now() * 0.001;
+
+    updateFlight(dt);
+    updateOcean(time);
+    updateWeatherParticles(dt, time);
+
+    const propellerSpeed = sim.running && !sim.paused ? 23 + Math.max(0, sim.velocity.y) * 4 : 2.2;
+    drone.userData.propellers.forEach(propeller => {
+      propeller.group.rotation.y += propeller.direction * propellerSpeed * dt;
+    });
+
+    waypointMarkers.forEach((marker, index) => {
+      const scale = 1 + Math.sin(time * 3 + index) * 0.12;
+      marker.scale.setScalar(scale);
+    });
+
+    updateHud();
+    controls.update();
+    renderer.render(scene, camera);
+  }
+
+  window.addEventListener("resize", resize);
+
+  // ---------- 초기화 ----------
+  buildTerrain("plain");
+  rebuildWeather();
+  resetSimulation(true);
+  resize();
+  animate();
+
+  requestAnimationFrame(() => {
+    $("loadingOverlay").classList.add("hidden");
+    setTimeout(() => $("loadingOverlay").remove(), 700);
+  });
+</script>
+</body>
+</html>
